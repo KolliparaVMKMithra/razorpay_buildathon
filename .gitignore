@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+backend/.env
+
+# IDE / OS / tooling
+.DS_Store
+Thumbs.db
+.cursor/
+.firecrawl/
+*.log
+.idea/
+.vscode/
+
+# Local build artifacts (models & data are committed intentionally)
+# ml/model/*.joblib — kept for one-command docker run

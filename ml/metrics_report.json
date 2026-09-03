@@ -1,0 +1,156 @@
+{
+  "model_version": "ringwatch-v1.0.0",
+  "generated_at": "2026-09-03T10:41:26.809351+00:00",
+  "training_rows": 11732,
+  "heldout_rows": 3911,
+  "train_fraud_rate": 0.0464,
+  "heldout_fraud_rate": 0.0151,
+  "threshold_calibration": {
+    "amount_scale": 15000,
+    "ring_penalty": 0.2,
+    "base_high": 0.82,
+    "base_low": 0.28,
+    "hard_block_floor": 0.92,
+    "val_fp_cost_inr": 9316.63,
+    "val_fn_cost_inr": 12030.009999999998,
+    "val_precision": 0.9905660377358491,
+    "val_recall": 0.963302752293578,
+    "threshold_min": 0.35999999999999993,
+    "threshold_max": 0.8197224,
+    "threshold_mean": 0.7847635616531742,
+    "avg_legit_amount_inr": 986.8509338695264
+  },
+  "heldout_evaluation": {
+    "split": "heldout",
+    "precision": 0.8103,
+    "recall": 0.7966,
+    "f1": 0.8034,
+    "roc_auc": 0.979,
+    "confusion_matrix": {
+      "tp": 47,
+      "fp": 11,
+      "fn": 12,
+      "tn": 3841
+    },
+    "false_positive_cost_inr": 83734.05,
+    "false_negative_cost_inr": 1196.7,
+    "fraud_prevented_inr": 1357.44,
+    "threshold_min": 0.42,
+    "threshold_max": 0.8198,
+    "threshold_mean": 0.7936,
+    "false_positives_by_cluster_type": {
+      "cafe_wifi": {
+        "count": 1,
+        "cost_inr": 87.32
+      },
+      "independent": {
+        "count": 10,
+        "cost_inr": 83646.73
+      }
+    },
+    "hard_negative_fp_rates": {
+      "family": {
+        "legit_rows": 150,
+        "false_positives": 0,
+        "fp_rate": 0.0
+      },
+      "hostel": {
+        "legit_rows": 109,
+        "false_positives": 0,
+        "fp_rate": 0.0
+      },
+      "office": {
+        "legit_rows": 123,
+        "false_positives": 0,
+        "fp_rate": 0.0
+      },
+      "cafe_wifi": {
+        "legit_rows": 71,
+        "false_positives": 1,
+        "fp_rate": 0.0141
+      }
+    },
+    "fraud_detection_by_cluster_type": {
+      "fraud_card_testing": {
+        "total": 59,
+        "detected": 47,
+        "recall": 0.7966101694915254
+      }
+    },
+    "decision_bands": {
+      "allow": 3853,
+      "review": 24,
+      "flagged": 34
+    }
+  },
+  "train_hard_negative_fp_rates": {
+    "family": {
+      "legit_rows": 294,
+      "false_positives": 0,
+      "fp_rate": 0.0
+    },
+    "hostel": {
+      "legit_rows": 228,
+      "false_positives": 0,
+      "fp_rate": 0.0
+    },
+    "office": {
+      "legit_rows": 279,
+      "false_positives": 0,
+      "fp_rate": 0.0
+    },
+    "cafe_wifi": {
+      "legit_rows": 286,
+      "false_positives": 0,
+      "fp_rate": 0.0
+    }
+  },
+  "psi_train_vs_heldout": {
+    "aggregate_psi": 0.0024797168750326777,
+    "per_feature_psi": {
+      "txn_count_by_device_5min": 0.0,
+      "txn_count_by_device_15min": 0.0,
+      "txn_count_by_ip_5min": 0.0,
+      "distinct_users_per_address_60min": 0.0,
+      "distinct_users_per_device_5min": 0.0,
+      "amount_distance_to_threshold": 0.014337079268298176,
+      "amount_inr_log": 0.014337079268298176,
+      "is_new_device_for_user": 0.0,
+      "is_new_ip_for_user": 0.0,
+      "hour_of_day": 0.008634474333982648,
+      "is_odd_hour": 0.0,
+      "day_of_week": 0.0023668371299438427,
+      "payment_method_card": 0.0,
+      "payment_method_upi": 0.0,
+      "payment_method_wallet": 0.0,
+      "payment_method_netbanking": 0.0
+    },
+    "drifting_features": [],
+    "is_drifting": false,
+    "threshold": 0.2
+  },
+  "known_limitations": "Held-out test contains only card_testing fraud (59/59 fraud rows). Stolen-card burst and structuring patterns exist only in training data; demo replay uses the full dataset to visualize all three ring types. Hard negatives (family/hostel/office/cafe_wifi) may cause false positives on shared devices.",
+  "features_used": [
+    "txn_count_by_device_5min",
+    "txn_count_by_device_15min",
+    "txn_count_by_ip_5min",
+    "distinct_users_per_address_60min",
+    "distinct_users_per_device_5min",
+    "amount_distance_to_threshold",
+    "amount_inr_log",
+    "is_new_device_for_user",
+    "is_new_ip_for_user",
+    "hour_of_day",
+    "is_odd_hour",
+    "day_of_week",
+    "payment_method_card",
+    "payment_method_upi",
+    "payment_method_wallet",
+    "payment_method_netbanking"
+  ],
+  "ensemble_weights": {
+    "xgboost": 0.375,
+    "lightgbm": 0.375,
+    "isolation_forest": 0.25
+  }
+}
