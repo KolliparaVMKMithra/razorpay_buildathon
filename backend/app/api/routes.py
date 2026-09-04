@@ -110,31 +110,7 @@ def dashboard_summary(db: Session = Depends(get_db)):
 
 @router.get("/rings")
 def get_rings():
-    # Focus on recent flagged activity so the graph stays readable during demo
-    recent_edges = stream_manager.ring_edges[-150:]
-    active_ids: set[str] = set()
-    for edge in recent_edges:
-        active_ids.add(edge["source"])
-        active_ids.add(edge["target"])
-
-    nodes = [
-        {
-            "id": k,
-            "type": v.get("type"),
-            "risk": v.get("risk"),
-            "flagged": v.get("flagged"),
-            "label": v.get("id"),
-        }
-        for k, v in stream_manager.ring_nodes.items()
-        if k in active_ids
-    ]
-    links = [e for e in recent_edges if e["source"] in active_ids and e["target"] in active_ids]
-
-    return {
-        "nodes": nodes,
-        "links": links,
-        "flagged_count": len(stream_manager.flagged_txns),
-    }
+    return stream_manager.get_ring_graph()
 
 
 @router.get("/review-queue")

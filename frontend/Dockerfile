@@ -1,4 +1,4 @@
-# Build cache bust: 2026-09-03-v5-scoring
+# Build cache bust: 2026-09-04-ring-graph
 FROM node:20-alpine AS builder
 WORKDIR /app
 ARG NEXT_PUBLIC_API_URL=http://localhost:8001

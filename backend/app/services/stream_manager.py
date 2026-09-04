@@ -177,7 +177,155 @@ class StreamManager:
                 if ctype and ctype.startswith("fraud_"):
                     s["patterns"].add(ctype)
 
-    def _data_path(self, filename: str | None = None) -> Path:
+    def get_ring_graph(self, max_hubs: int = 6) -> dict:
+        """Build readable device-hub ring clusters for the fraud network graph."""
+        if not self.ring_nodes:
+            return {
+                "nodes": [],
+                "links": [],
+                "clusters": [],
+                "stats": {"flagged_txns": 0, "active_rings": 0, "entities": 0},
+            }
+
+        hub_activity: dict[str, dict] = defaultdict(
+            lambda: {"txn_ids": set(), "risk_sum": 0.0, "volume_inr": 0.0}
+        )
+        for edge in self.ring_edges:
+            txn = edge.get("transaction_id")
+            risk = float(edge.get("risk_score", 0))
+            amount = float(edge.get("amount_inr", 0))
+            for end in (edge["source"], edge["target"]):
+                if end.startswith("device:"):
+                    hub_activity[end]["txn_ids"].add(txn)
+                    hub_activity[end]["risk_sum"] += risk
+                    hub_activity[end]["volume_inr"] += amount
+
+        ranked_hubs = sorted(
+            hub_activity.keys(),
+            key=lambda h: (len(hub_activity[h]["txn_ids"]), hub_activity[h]["risk_sum"]),
+            reverse=True,
+        )[:max_hubs]
+
+        hub_to_cluster = {hub: f"ring_{i}" for i, hub in enumerate(ranked_hubs)}
+        active_ids: set[str] = set()
+        active_links: list[dict] = []
+
+        for edge in self.ring_edges[-400:]:
+            src, tgt = edge["source"], edge["target"]
+            src_hub = src if src in hub_to_cluster else None
+            tgt_hub = tgt if tgt in hub_to_cluster else None
+            if src in hub_to_cluster:
+                src_hub = src
+            elif src.startswith(("ip:", "addr:", "user:")):
+                for hub in ranked_hubs:
+                    if any(
+                        e["source"] == hub and e["target"] == src
+                        or e["target"] == hub and e["source"] == src
+                        for e in self.ring_edges[-400:]
+                    ):
+                        src_hub = hub
+                        break
+            if tgt in hub_to_cluster:
+                tgt_hub = tgt
+            elif tgt.startswith(("ip:", "addr:", "user:")):
+                for hub in ranked_hubs:
+                    if any(
+                        e["source"] == hub and e["target"] == tgt
+                        or e["target"] == hub and e["source"] == tgt
+                        for e in self.ring_edges[-400:]
+                    ):
+                        tgt_hub = hub
+                        break
+
+            hub = src if src in hub_to_cluster else tgt if tgt in hub_to_cluster else None
+            if not hub:
+                continue
+            if src in self.ring_nodes and tgt in self.ring_nodes:
+                active_ids.add(src)
+                active_ids.add(tgt)
+                active_links.append(
+                    {
+                        "source": src,
+                        "target": tgt,
+                        "transaction_id": edge.get("transaction_id"),
+                        "amount_inr": edge.get("amount_inr"),
+                        "risk_score": edge.get("risk_score"),
+                        "relation": edge.get("relation", "co-flagged"),
+                        "cluster_id": hub_to_cluster[hub],
+                    }
+                )
+
+        node_cluster: dict[str, str] = {}
+        for hub, cid in hub_to_cluster.items():
+            node_cluster[hub] = cid
+            for edge in self.ring_edges[-400:]:
+                if edge["source"] == hub and edge["target"] in self.ring_nodes:
+                    node_cluster[edge["target"]] = cid
+                if edge["target"] == hub and edge["source"] in self.ring_nodes:
+                    node_cluster[edge["source"]] = cid
+
+        type_short = {"device": "DEV", "ip": "IP", "address": "ADDR", "user": "USR"}
+
+        nodes = []
+        for nid in active_ids:
+            raw = self.ring_nodes.get(nid, {})
+            etype = raw.get("type") or nid.split(":")[0]
+            if etype == "addr":
+                etype = "address"
+            label = str(raw.get("id", nid.split(":", 1)[-1]))
+            users = raw.get("users", set())
+            user_count = len(users) if isinstance(users, set) else int(raw.get("user_count", 0))
+            nodes.append(
+                {
+                    "id": nid,
+                    "type": etype,
+                    "label": label,
+                    "short_label": f"{type_short.get(etype, etype.upper())} …{label[-8:]}",
+                    "risk": round(float(raw.get("risk", 0)), 4),
+                    "txn_count": int(raw.get("txn_count", 1)),
+                    "user_count": user_count,
+                    "total_inr": round(float(raw.get("total_inr", 0)), 2),
+                    "patterns": sorted(raw.get("patterns", [])),
+                    "cluster_id": node_cluster.get(nid, "other"),
+                    "is_hub": nid in hub_to_cluster,
+                }
+            )
+
+        clusters = []
+        for hub in ranked_hubs:
+            raw = self.ring_nodes.get(hub, {})
+            act = hub_activity[hub]
+            cid = hub_to_cluster[hub]
+            member_types = defaultdict(int)
+            for n in nodes:
+                if n["cluster_id"] == cid:
+                    member_types[n["type"]] += 1
+            patterns = sorted(raw.get("patterns", []))
+            clusters.append(
+                {
+                    "id": cid,
+                    "hub_id": hub,
+                    "hub_label": str(raw.get("id", hub.split(":")[-1])),
+                    "txn_count": len(act["txn_ids"]),
+                    "volume_inr": round(act["volume_inr"], 2),
+                    "max_risk": round(float(raw.get("risk", 0)), 4),
+                    "pattern": patterns[0] if patterns else None,
+                    "members": dict(member_types),
+                }
+            )
+
+        return {
+            "nodes": nodes,
+            "links": active_links[-120:],
+            "clusters": clusters,
+            "stats": {
+                "flagged_txns": len(self.flagged_txns),
+                "active_rings": len(clusters),
+                "entities": len(nodes),
+                "links": len(active_links),
+            },
+        }
+
         data_dir = Path(settings.data_dir)
         if not data_dir.is_absolute():
             data_dir = Path(__file__).resolve().parents[2] / data_dir
@@ -258,26 +406,60 @@ class StreamManager:
         )
 
     def _update_ring_graph(self, row: dict, result: dict) -> None:
-        if not result["flagged"]:
+        if result["decision_band"] not in ("review", "flagged"):
             return
         txn_id = row["transaction_id"]
+        amount = float(row.get("amount_inr", 0))
+        risk = float(result["risk_score"])
         self.flagged_txns.append(txn_id)
-        entities = {
-            f"device:{row['device_id']}": {"type": "device", "id": row["device_id"]},
-            f"ip:{row['ip_address']}": {"type": "ip", "id": row["ip_address"]},
-            f"addr:{row['shipping_address_id']}": {"type": "address", "id": row["shipping_address_id"]},
-            f"user:{row['user_id']}": {"type": "user", "id": row["user_id"]},
-        }
-        for key, node in entities.items():
-            node["risk"] = max(node.get("risk", 0), result["risk_score"])
-            node["flagged"] = True
-            self.ring_nodes[key] = node
-        keys = list(entities.keys())
-        for i in range(len(keys)):
-            for j in range(i + 1, len(keys)):
-                self.ring_edges.append(
-                    {"source": keys[i], "target": keys[j], "transaction_id": txn_id}
-                )
+
+        ctype = row.get("cluster_type") or ""
+        pattern = ctype if ctype.startswith("fraud_") else None
+
+        entity_defs = [
+            (f"device:{row['device_id']}", "device", row["device_id"]),
+            (f"ip:{row['ip_address']}", "ip", row["ip_address"]),
+            (f"addr:{row['shipping_address_id']}", "address", row["shipping_address_id"]),
+            (f"user:{row['user_id']}", "user", row["user_id"]),
+        ]
+
+        for key, etype, eid in entity_defs:
+            if key not in self.ring_nodes:
+                self.ring_nodes[key] = {
+                    "type": etype,
+                    "id": eid,
+                    "risk": 0.0,
+                    "txn_count": 0,
+                    "users": set(),
+                    "total_inr": 0.0,
+                    "patterns": set(),
+                    "flagged": True,
+                }
+            node = self.ring_nodes[key]
+            node["risk"] = max(float(node.get("risk", 0)), risk)
+            node["txn_count"] = int(node.get("txn_count", 0)) + 1
+            node["users"].add(row["user_id"])
+            node["total_inr"] = float(node.get("total_inr", 0)) + amount
+            if pattern:
+                node["patterns"].add(pattern)
+
+        device_key = f"device:{row['device_id']}"
+        satellites = [
+            (f"ip:{row['ip_address']}", "same-txn-ip"),
+            (f"addr:{row['shipping_address_id']}", "same-txn-address"),
+            (f"user:{row['user_id']}", "same-txn-user"),
+        ]
+        for target, relation in satellites:
+            self.ring_edges.append(
+                {
+                    "source": device_key,
+                    "target": target,
+                    "transaction_id": txn_id,
+                    "amount_inr": amount,
+                    "risk_score": risk,
+                    "relation": relation,
+                }
+            )
 
     def _persist(self, db: Session, row: dict, result: dict) -> None:
         now = datetime.now(timezone.utc)

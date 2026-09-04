@@ -4,9 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { api, wsUrl } from "@/lib/api";
 import { bandStyle, patternLabel, riskColor } from "@/lib/labels";
 import EntityRiskTable from "@/components/EntityRiskTable";
+import FraudRingPanel from "@/components/FraudRingPanel";
 import InspectDrawer from "@/components/InspectDrawer";
 import MetricsChart from "@/components/MetricsChart";
 import ThresholdChart from "@/components/ThresholdChart";
+import type { RingNode } from "@/components/RingGraph";
 
 type TxnPayload = {
   transaction: Record<string, unknown>;
@@ -53,6 +55,17 @@ export default function Dashboard() {
   const [connected, setConnected] = useState(false);
   const [streamRunning, setStreamRunning] = useState(false);
   const [streamProgress, setStreamProgress] = useState({ index: 0, total: 0 });
+  const [ringData, setRingData] = useState<{
+    nodes: RingNode[];
+    links: any[];
+    clusters: any[];
+    stats: { flagged_txns: number; active_rings: number; entities: number; links?: number };
+  }>({ nodes: [], links: [], clusters: [], stats: { flagged_txns: 0, active_rings: 0, entities: 0 } });
+  const [selectedRingNode, setSelectedRingNode] = useState<RingNode | null>(null);
+
+  const refreshRings = useCallback(() => {
+    api<any>("/api/rings").then(setRingData).catch(() => {});
+  }, []);
 
   const refreshSummary = useCallback(() => {
     api<DashboardSummary>("/api/dashboard/summary").then(setSummary).catch(() => {});
@@ -70,15 +83,17 @@ export default function Dashboard() {
       if (status.history?.length) setHistory(status.history);
       if (status.session_id) setSessionId(status.session_id);
       refreshSummary();
+      refreshRings();
     } catch {
       /* backend starting */
     }
-  }, [refreshSummary]);
+  }, [refreshSummary, refreshRings]);
 
   useEffect(() => {
     api<any>("/api/metrics/offline").then(setOffline).catch(() => {});
     syncLiveState();
     refreshQueue();
+    refreshRings();
 
     const ws = new WebSocket(wsUrl());
     ws.onopen = () => setConnected(true);
@@ -103,6 +118,7 @@ export default function Dashboard() {
           );
         }
         refreshSummary();
+        if (msg.payload?.decision_band === "review" || msg.payload?.flagged) refreshRings();
         if (msg.payload?.decision_band === "review") refreshQueue();
         setStreamRunning(true);
       }
@@ -123,7 +139,7 @@ export default function Dashboard() {
       clearInterval(poll);
       clearInterval(queuePoll);
     };
-  }, [refreshQueue, refreshSummary, syncLiveState]);
+  }, [refreshQueue, refreshRings, refreshSummary, syncLiveState]);
 
   const startStream = async () => {
     try {
@@ -134,8 +150,11 @@ export default function Dashboard() {
       setStreamProgress({ index: 0, total: res.transactions || 0 });
       setTicker([]);
       setHistory([]);
+      setRingData({ nodes: [], links: [], clusters: [], stats: { flagged_txns: 0, active_rings: 0, entities: 0 } });
+      setSelectedRingNode(null);
       refreshQueue();
       refreshSummary();
+      refreshRings();
     } catch {
       alert("Failed to start stream — check backend logs.");
     }
@@ -147,9 +166,12 @@ export default function Dashboard() {
     setStreamProgress({ index: 0, total: 0 });
     setTicker([]);
     setHistory([]);
+    setRingData({ nodes: [], links: [], clusters: [], stats: { flagged_txns: 0, active_rings: 0, entities: 0 } });
+    setSelectedRingNode(null);
     setSummary(null);
     refreshQueue();
     refreshSummary();
+    refreshRings();
   };
 
   const openTxn = async (txnId: string) => {
@@ -456,6 +478,13 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
+
+      <FraudRingPanel
+        data={ringData}
+        selectedNode={selectedRingNode}
+        onNodeClick={setSelectedRingNode}
+        onInspectTxn={openTxn}
+      />
 
       {audit && <InspectDrawer audit={audit} onClose={() => setAudit(null)} />}
 
